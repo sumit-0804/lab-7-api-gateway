@@ -1,0 +1,1144 @@
+{
+  "info": {
+    "name": "API Gateway - Lab 7",
+    "description": "Every request goes to ONE address: {{baseUrl}}, the API Gateway.\nSelect the environment \"Lab7 - Local\" (http://localhost:8080) or \"Lab7 - Cloud\" (public gateway URL) and run the same collection against both.\n\nFolders 1-5 run automatically in order (Collection Runner / newman).\nFolder 6 is manual: stop a service (locally `docker compose stop user-service`, in the cloud suspend the service), send 6a and 6b, restart it, send 6c. While the service is up, 6a/6b report themselves as skipped instead of failing.\n\nEmails and SKUs are generated per run, so the collection can be run repeatedly.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Gateway",
+      "item": [
+        {
+          "name": "01 GET /health (gateway itself)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('answered by the gateway, not proxied', () => pm.expect(body.service).to.eql('api-gateway'));",
+                  "pm.test('three routes registered', () => pm.expect(body.routes.map(r => r.prefix)).to.eql(['/users', '/products', '/orders']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 GET /health/services (registry check)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health",
+                "services"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK - every registered service answered', () => pm.response.to.have.status(200));",
+                  "const names = pm.response.json().services.map(s => s.service);",
+                  "pm.test('checks all three services', () => pm.expect(names).to.eql(['user-service', 'product-service', 'order-service']));",
+                  "pm.test('each service has a connected database', () => pm.response.json().services.forEach(s => pm.expect(s.health.db).to.eql('connected')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 GET /unknown -> 404 from gateway",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/unknown",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "unknown"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+                  "pm.test('answered by the gateway', () => pm.expect(pm.response.json().service).to.eql('api-gateway'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Users via gateway",
+      "item": [
+        {
+          "name": "04 GET /users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('body is an array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 POST /users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Lab7 Buyer\",\n  \"email\": \"{{userEmail}}\",\n  \"course\": \"Web Services and SOA\",\n  \"semester\": 3\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// email is unique in userdb, so a fresh one is generated per run.",
+                  "pm.collectionVariables.set('userEmail', `lab7.buyer.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Location header passed through the gateway', () => pm.expect(pm.response.headers.get('Location')).to.match(/^\\/users\\//));",
+                  "pm.collectionVariables.set('userId', pm.response.code === 201 ? pm.response.json().id : '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 GET /users/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('userId')) {",
+                  "    throw new Error('{{userId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('same record', () => pm.expect(pm.response.json().email).to.eql(pm.variables.get('userEmail')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 PUT /users/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Lab7 Buyer (updated)\",\n  \"email\": \"{{userEmail}}\",\n  \"course\": \"Web Services and SOA\",\n  \"semester\": 4\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('userId')) {",
+                  "    throw new Error('{{userId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('semester replaced', () => pm.expect(pm.response.json().semester).to.eql(4));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 GET /users/999 (invalid id -> 404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+                  "pm.test('answered by user-service through the gateway', () => pm.expect(pm.response.json().service).to.eql('user-service'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Products via gateway",
+      "item": [
+        {
+          "name": "09 GET /products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('body is an array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 POST /products",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Campus Hoodie\",\n  \"sku\": \"{{productSku}}\",\n  \"price\": 899.5,\n  \"stock\": 25,\n  \"category\": \"Apparel\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// sku is unique in productdb, so a fresh one is generated per run.",
+                  "pm.collectionVariables.set('productSku', `HOOD-${String(Date.now()).slice(-8)}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('productId', pm.response.code === 201 ? pm.response.json().id : '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 GET /products/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('productId')) {",
+                  "    throw new Error('{{productId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('same record', () => pm.expect(pm.response.json().sku).to.eql(pm.variables.get('productSku')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 PUT /products/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Campus Hoodie (Winter)\",\n  \"sku\": \"{{productSku}}\",\n  \"price\": 949,\n  \"stock\": 30,\n  \"category\": \"Apparel\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('productId')) {",
+                  "    throw new Error('{{productId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('price replaced', () => pm.expect(pm.response.json().price).to.eql(949));",
+                  "    pm.collectionVariables.set('stockAfterPut', pm.response.json().stock);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13 GET /products/999 (invalid id -> 404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products/999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+                  "pm.test('answered by product-service through the gateway', () => pm.expect(pm.response.json().service).to.eql('product-service'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Orders via gateway",
+      "item": [
+        {
+          "name": "14 POST /orders (gateway -> Order -> User + Product)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 2\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('userId') || !pm.variables.get('productId')) {",
+                  "    throw new Error('{{userId}} / {{productId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.test('Order -> User call succeeded', () => pm.expect(body.userSnapshot.email).to.eql(pm.variables.get('userEmail')));",
+                  "    pm.test('Order -> Product call succeeded', () => pm.expect(body.productSnapshot.sku).to.eql(pm.variables.get('productSku')));",
+                  "    pm.test('price came from product-service', () => pm.expect(body.totalPrice).to.eql(body.unitPrice * body.quantity));",
+                  "    pm.collectionVariables.set('orderId', body.id);",
+                  "} else {",
+                  "    pm.collectionVariables.set('orderId', '');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15 GET /orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('contains the new order', () => pm.expect(pm.response.json().map(o => o.id)).to.include(pm.variables.get('orderId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16 GET /orders/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders",
+                "{{orderId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('orderId')) {",
+                  "    throw new Error('{{orderId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('same order', () => pm.expect(pm.response.json().id).to.eql(pm.variables.get('orderId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17 GET /orders/{id}?expand=true",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}?expand=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders",
+                "{{orderId}}"
+              ],
+              "query": [
+                {
+                  "key": "expand",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('orderId')) {",
+                  "    throw new Error('{{orderId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    pm.test('user fetched live from user-service', () => pm.expect(body.user.id).to.eql(pm.variables.get('userId')));",
+                  "    pm.test('product fetched live from product-service', () => pm.expect(body.product.id).to.eql(pm.variables.get('productId')));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18 GET /products/{id} (stock reduced by the order)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{productId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('productId')) {",
+                  "    throw new Error('{{productId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const expected = Number(pm.variables.get('stockAfterPut')) - 2;",
+                  "pm.test(`stock reserved through the API (expected ${expected})`, () => pm.expect(pm.response.json().stock).to.eql(expected));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19 POST /orders with unknown userId -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"64b000000000000000000000\",\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 1\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+                  "pm.test('answered by order-service through the gateway', () => pm.expect(pm.response.json().service).to.eql('order-service'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Deletes via gateway",
+      "item": [
+        {
+          "name": "20 POST /users (temporary)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Temp User\",\n  \"email\": \"{{tempEmail}}\",\n  \"course\": \"Web Services and SOA\",\n  \"semester\": 1\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('tempEmail', `lab7.temp.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('tempUserId', pm.response.code === 201 ? pm.response.json().id : '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21 DELETE /users/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{tempUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{tempUserId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('tempUserId')) {",
+                  "    throw new Error('{{tempUserId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22 GET deleted user -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{tempUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{tempUserId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('tempUserId')) {",
+                  "    throw new Error('{{tempUserId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23 POST /products (temporary)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Temp Product\",\n  \"sku\": \"{{tempSku}}\",\n  \"price\": 10,\n  \"stock\": 1,\n  \"category\": \"Temp\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('tempSku', `TMP-${String(Date.now()).slice(-8)}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('tempProductId', pm.response.code === 201 ? pm.response.json().id : '');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "24 DELETE /products/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products/{{tempProductId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products",
+                "{{tempProductId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('tempProductId')) {",
+                  "    throw new Error('{{tempProductId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Unreachable service (manual)",
+      "description": "Stop user-service first (local: `docker compose stop user-service`). Send 6a and 6b. Then start it again (`docker compose start user-service`) and send 6c.",
+      "item": [
+        {
+          "name": "6a GET /users with user-service stopped -> 503 from gateway",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.test.skip('Skipped: user-service is still up. Stop it, then send this request again.');",
+                  "} else {",
+                  "    const body = pm.response.json();",
+                  "    pm.test('503 Service Unavailable', () => pm.response.to.have.status(503));",
+                  "    pm.test('answered by the gateway, not a hang or crash', () => pm.expect(body.service).to.eql('api-gateway'));",
+                  "    pm.test('names the unreachable service', () => pm.expect(body.target).to.eql('user-service'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6b POST /orders with user-service stopped -> 503 from order-service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 1\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('userId') || !pm.variables.get('productId')) {",
+                  "    throw new Error('{{userId}} / {{productId}} not set - run the earlier folders first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    pm.test.skip('Skipped: user-service is still up. Stop it, then send this request again.');",
+                  "} else {",
+                  "    const body = pm.response.json();",
+                  "    pm.test('503 Service Unavailable', () => pm.response.to.have.status(503));",
+                  "    pm.test('order-service (behind the gateway) names the failing dependency', () => pm.expect(body.dependency).to.eql('user-service'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6c GET /users after restart -> 200 (recovery)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 503) {",
+                  "    pm.test.skip('Skipped: user-service is still stopped. Start it, wait a few seconds, send again.');",
+                  "} else {",
+                  "    pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "productId",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "userEmail",
+      "value": ""
+    },
+    {
+      "key": "productSku",
+      "value": ""
+    },
+    {
+      "key": "stockAfterPut",
+      "value": ""
+    },
+    {
+      "key": "tempEmail",
+      "value": ""
+    },
+    {
+      "key": "tempUserId",
+      "value": ""
+    },
+    {
+      "key": "tempSku",
+      "value": ""
+    },
+    {
+      "key": "tempProductId",
+      "value": ""
+    }
+  ]
+}

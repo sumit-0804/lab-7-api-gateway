@@ -1,0 +1,46 @@
+$ docker compose stop user-service
+ Container campusconnect-lab7-user-service-1 Stopping 
+ Container campusconnect-lab7-user-service-1 Stopped 
+
+$ curl -i http://localhost:8080/users
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json; charset=utf-8
+Content-Length: 189
+ETag: W/"bd-mWnjcXDrRfXv0AuvE4wET0CzzGI"
+Date: Fri, 25 Sep 2026 09:11:24 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"status":503,"service":"api-gateway","error":"Service Unavailable","message":"user-service is not reachable right now, please try again later","target":"user-service","reason":"EAI_AGAIN"}
+
+$ curl -i -X POST http://localhost:8080/orders (existing user + product)
+HTTP/1.1 503 Service Unavailable
+x-powered-by: Express
+access-control-allow-origin: *
+content-type: application/json; charset=utf-8
+content-length: 305
+etag: W/"131-WzEpco2fHqBLz1wiab+Fvr6BIic"
+date: Fri, 25 Sep 2026 09:11:32 GMT
+connection: close
+
+{"status":503,"service":"order-service","error":"Service Unavailable","message":"Cannot process the request because user-service did not respond","dependency":"user-service","url":"http://user-service:3001/users/6ab63a8b9ad27c09ba198b25","reason":"no response within 3000ms","timeoutMs":3000,"attempts":2}
+
+$ curl http://localhost:8080/health/services
+{"service":"api-gateway","services":[{"service":"user-service","reachable":false,"reason":"ENOTFOUND"},{"service":"product-service","reachable":true,"status":200,"health":{"status":"ok","service":"product-service","port":3002,"db":"connected"}},{"service":"order-service","reachable":true,"status":200,"health":{"status":"ok","service":"order-service","port":3003,"db":"connected","dependencies":{"userService":"http://user-service:3001","productService":"http://product-service:3002"}}}]}
+
+$ curl http://localhost:8080/health   (gateway itself still up)
+{"status":"ok","service":"api-gateway","uptimeSeconds":89,"routes":[{"prefix":"/users","service":"user-service"},{"prefix":"/products","service":"product-service"},{"prefix":"/orders","service":"order-service"}]}
+
+$ docker compose logs api-gateway (tail)
+[api-gateway] GET /users -> user-service failed: EAI_AGAIN
+[api-gateway] GET /users -> user-service (http://user-service:3001) 503 5008ms
+[api-gateway] GET /health -> api-gateway 200 1ms
+[api-gateway] POST /orders -> order-service (http://order-service:3003) 503 6314ms
+[api-gateway] GET /health/services -> api-gateway 503 3838ms
+[api-gateway] GET /health -> api-gateway 200 1ms
+
+$ docker compose start user-service
+ Container campusconnect-lab7-user-service-1 Starting 
+ Container campusconnect-lab7-user-service-1 Started 
+$ curl -i http://localhost:8080/users   (recovery)
+HTTP/1.1 200 OK

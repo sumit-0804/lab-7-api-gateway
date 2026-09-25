@@ -1,0 +1,85 @@
+$ docker compose config
+name: campusconnect-lab7
+services:
+  api-gateway:
+    build:
+      context: D:\sem3\it644\lab7\api-gateway
+      dockerfile: Dockerfile
+    depends_on:
+      order-service:
+        condition: service_started
+        required: true
+      product-service:
+        condition: service_started
+        required: true
+      user-service:
+        condition: service_started
+        required: true
+    environment:
+      ORDER_SERVICE_URL: http://order-service:3003
+      PORT: "8080"
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      PROXY_TIMEOUT_MS: "10000"
+      USER_SERVICE_URL: http://user-service:3001
+    image: api-gateway:v1
+    networks:
+      campus-network: null
+    ports:
+      - mode: ingress
+        target: 8080
+        published: "8080"
+        protocol: tcp
+    restart: unless-stopped
+  order-service:
+    build:
+      context: D:\sem3\it644\lab7\order-service
+      dockerfile: Dockerfile
+    depends_on:
+      product-service:
+        condition: service_started
+        required: true
+      user-service:
+        condition: service_started
+        required: true
+    environment:
+      DEPENDENCY_RETRIES: "1"
+      DEPENDENCY_TIMEOUT_MS: "3000"
+      MONGO_URI: mongodb+srv://<user>:<password>@cluster0.uw75g9j.mongodb.net/orderdb?appName=Cluster0&retryWrites=true&w=majority
+      PORT: "3003"
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      USER_SERVICE_URL: http://user-service:3001
+    expose:
+      - "3003"
+    image: order-service:v1
+    networks:
+      campus-network: null
+    restart: unless-stopped
+  product-service:
+    build:
+      context: D:\sem3\it644\lab7\product-service
+      dockerfile: Dockerfile
+    environment:
+      MONGO_URI: mongodb+srv://<user>:<password>@cluster0.uw75g9j.mongodb.net/productdb?appName=Cluster0&retryWrites=true&w=majority
+      PORT: "3002"
+    expose:
+      - "3002"
+    image: product-service:v1
+    networks:
+      campus-network: null
+    restart: unless-stopped
+  user-service:
+    build:
+      context: D:\sem3\it644\lab7\user-service
+      dockerfile: Dockerfile
+    environment:
+      MONGO_URI: mongodb+srv://<user>:<password>@cluster0.uw75g9j.mongodb.net/userdb?appName=Cluster0&retryWrites=true&w=majority
+      PORT: "3001"
+    expose:
+      - "3001"
+    image: user-service:v1
+    networks:
+      campus-network: null
+    restart: unless-stopped
+networks:
+  campus-network:
+    name: campusconnect-lab7_campus-network

@@ -1,0 +1,26 @@
+$ docker compose ps
+SERVICE           IMAGE                STATUS                   PORTS
+api-gateway       api-gateway:v1       Up 3 minutes (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+order-service     order-service:v1     Up 3 minutes (healthy)   3003/tcp
+product-service   product-service:v1   Up 6 minutes (healthy)   3002/tcp
+user-service      user-service:v1      Up 3 minutes (healthy)   3001/tcp
+
+$ docker compose logs user-service
+user-db connected
+user-service listening on port 3001
+
+$ docker compose logs product-service
+product-db connected
+product-service listening on port 3002
+
+$ docker compose logs order-service
+order-db connected
+order-service listening on port 3003
+USER_SERVICE_URL=http://user-service:3001
+PRODUCT_SERVICE_URL=http://product-service:3002
+
+$ docker compose logs api-gateway
+api-gateway listening on port 8080
+  /users/* -> user-service at http://user-service:3001 (from USER_SERVICE_URL)
+  /products/* -> product-service at http://product-service:3002 (from PRODUCT_SERVICE_URL)
+  /orders/* -> order-service at http://order-service:3003 (from ORDER_SERVICE_URL)

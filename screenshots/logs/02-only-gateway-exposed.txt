@@ -1,0 +1,18 @@
+$ docker compose ps
+SERVICE           STATUS                        PORTS
+api-gateway       Up About a minute (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+order-service     Up About a minute (healthy)   3003/tcp
+product-service   Up About a minute (healthy)   3002/tcp
+user-service      Up About a minute (healthy)   3001/tcp
+
+$ curl http://localhost:3001/health
+curl: failed to connect (exit 7) - port 3001 is not published
+
+$ curl http://localhost:3002/health
+curl: failed to connect (exit 7) - port 3002 is not published
+
+$ curl http://localhost:3003/health
+curl: failed to connect (exit 7) - port 3003 is not published
+
+$ curl http://localhost:8080/health
+{"status":"ok","service":"api-gateway","uptimeSeconds":70,"routes":[{"prefix":"/users","service":"user-service"},{"prefix":"/products","service":"product-service"},{"prefix":"/orders","service":"order-service"}]}

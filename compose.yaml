@@ -1,0 +1,84 @@
+name: campusconnect-lab7
+
+# The API Gateway is the only service with a published port. User, Product and
+# Order Service only `expose` their ports, so they are reachable from inside
+# campus-network but not from the host or the internet.
+# Data lives in MongoDB Atlas; each service gets its own database via its URI.
+
+services:
+  api-gateway:
+    build:
+      context: ./api-gateway
+    image: api-gateway:v1
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    environment:
+      PORT: 8080
+      # Service registry: the gateway builds its routing table from these.
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:3001}
+      PRODUCT_SERVICE_URL: ${PRODUCT_SERVICE_URL:-http://product-service:3002}
+      ORDER_SERVICE_URL: ${ORDER_SERVICE_URL:-http://order-service:3003}
+      PROXY_TIMEOUT_MS: ${PROXY_TIMEOUT_MS:-10000}
+    # started, not healthy: the 503 demo stops a service while the gateway keeps running.
+    depends_on:
+      user-service:
+        condition: service_started
+      product-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+    networks:
+      - campus-network
+
+  user-service:
+    build:
+      context: ./user-service
+    image: user-service:v1
+    restart: unless-stopped
+    expose:
+      - "${USER_SERVICE_PORT:-3001}"
+    environment:
+      PORT: ${USER_SERVICE_PORT:-3001}
+      MONGO_URI: ${USER_MONGO_URI:?USER_MONGO_URI must be set in .env}
+    networks:
+      - campus-network
+
+  product-service:
+    build:
+      context: ./product-service
+    image: product-service:v1
+    restart: unless-stopped
+    expose:
+      - "${PRODUCT_SERVICE_PORT:-3002}"
+    environment:
+      PORT: ${PRODUCT_SERVICE_PORT:-3002}
+      MONGO_URI: ${PRODUCT_MONGO_URI:?PRODUCT_MONGO_URI must be set in .env}
+    networks:
+      - campus-network
+
+  order-service:
+    build:
+      context: ./order-service
+    image: order-service:v1
+    restart: unless-stopped
+    expose:
+      - "${ORDER_SERVICE_PORT:-3003}"
+    environment:
+      PORT: ${ORDER_SERVICE_PORT:-3003}
+      MONGO_URI: ${ORDER_MONGO_URI:?ORDER_MONGO_URI must be set in .env}
+      # Same registry values the gateway uses.
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:3001}
+      PRODUCT_SERVICE_URL: ${PRODUCT_SERVICE_URL:-http://product-service:3002}
+      DEPENDENCY_TIMEOUT_MS: ${DEPENDENCY_TIMEOUT_MS:-3000}
+      DEPENDENCY_RETRIES: ${DEPENDENCY_RETRIES:-1}
+    depends_on:
+      user-service:
+        condition: service_started
+      product-service:
+        condition: service_started
+    networks:
+      - campus-network
+
+networks:
+  campus-network: {}

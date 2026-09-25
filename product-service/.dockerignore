@@ -1,0 +1,17 @@
+# Installed inside the image by `npm ci`, never copied from the host.
+node_modules/
+npm-debug.log*
+
+# Secrets and local-only configuration must not enter the image.
+.env
+.env.local
+*.pem
+
+# Not needed at runtime.
+.git/
+.gitignore
+Dockerfile
+.dockerignore
+README.md
+*.log
+.DS_Store

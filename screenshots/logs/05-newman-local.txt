@@ -1,0 +1,160 @@
+newman
+
+API Gateway - Lab 7
+
+□ 1. Gateway
+└ 01 GET /health (gateway itself)
+  GET http://localhost:8080/health [200 OK, 426B, 52ms]
+  √  200 OK
+  √  answered by the gateway, not proxied
+  √  three routes registered
+
+└ 02 GET /health/services (registry check)
+  GET http://localhost:8080/health/services [200 OK, 773B, 92ms]
+  √  200 OK - every registered service answered
+  √  checks all three services
+  √  each service has a connected database
+
+└ 03 GET /unknown -> 404 from gateway
+  GET http://localhost:8080/unknown [404 Not Found, 315B, 6ms]
+  √  404 Not Found
+  √  answered by the gateway
+
+□ 2. Users via gateway
+└ 04 GET /users
+  GET http://localhost:8080/users [200 OK, 554B, 98ms]
+  √  200 OK
+  √  body is an array
+
+└ 05 POST /users
+  POST http://localhost:8080/users [201 Created, 433B, 138ms]
+  √  201 Created
+  √  Location header passed through the gateway
+
+└ 06 GET /users/{id}
+  GET http://localhost:8080/users/6ab63bc04ac0c65ba8105364 [200 OK, 385B, 82ms]
+  √  200 OK
+  √  same record
+
+└ 07 PUT /users/{id}
+  PUT http://localhost:8080/users/6ab63bc04ac0c65ba8105364 [200 OK, 395B, 174ms]
+  √  200 OK
+  √  semester replaced
+
+└ 08 GET /users/999 (invalid id -> 404)
+  GET http://localhost:8080/users/999 [404 Not Found, 350B, 14ms]
+  √  404 Not Found
+  √  answered by user-service through the gateway
+
+□ 3. Products via gateway
+└ 09 GET /products
+  GET http://localhost:8080/products [200 OK, 506B, 37ms]
+  √  200 OK
+  √  body is an array
+
+└ 10 POST /products
+  POST http://localhost:8080/products [201 Created, 415B, 68ms]
+  √  201 Created
+
+└ 11 GET /products/{id}
+  GET http://localhost:8080/products/6ab63bc11b667783479b2347 [200 OK, 364B, 59ms]
+  √  200 OK
+  √  same record
+
+└ 12 PUT /products/{id}
+  PUT http://localhost:8080/products/6ab63bc11b667783479b2347 [200 OK, 371B, 139ms]
+  √  200 OK
+  √  price replaced
+
+└ 13 GET /products/999 (invalid id -> 404)
+  GET http://localhost:8080/products/999 [404 Not Found, 356B, 12ms]
+  √  404 Not Found
+  √  answered by product-service through the gateway
+
+□ 4. Orders via gateway
+└ 14 POST /orders (gateway -> Order -> User + Product)
+  POST http://localhost:8080/orders [201 Created, 673B, 458ms]
+  √  201 Created
+  √  Order -> User call succeeded
+  √  Order -> Product call succeeded
+  √  price came from product-service
+
+└ 15 GET /orders
+  GET http://localhost:8080/orders [200 OK, 2.16kB, 144ms]
+  √  200 OK
+  √  contains the new order
+
+└ 16 GET /orders/{id}
+  GET http://localhost:8080/orders/6ab63bc2d698d02a6f01b4b2 [200 OK, 624B, 149ms]
+  √  200 OK
+  √  same order
+
+└ 17 GET /orders/{id}?expand=true
+  GET http://localhost:8080/orders/6ab63bc2d698d02a6f01b4b2?expand=true [200 OK, 929B, 276ms]
+  √  200 OK
+  √  user fetched live from user-service
+  √  product fetched live from product-service
+
+└ 18 GET /products/{id} (stock reduced by the order)
+  GET http://localhost:8080/products/6ab63bc11b667783479b2347 [200 OK, 371B, 308ms]
+  √  200 OK
+  √  stock reserved through the API (expected 28)
+
+└ 19 POST /orders with unknown userId -> 404
+  POST http://localhost:8080/orders [404 Not Found, 451B, 124ms]
+  √  404 Not Found
+  √  answered by order-service through the gateway
+
+□ 5. Deletes via gateway
+└ 20 POST /users (temporary)
+  POST http://localhost:8080/users [201 Created, 431B, 110ms]
+  √  201 Created
+
+└ 21 DELETE /users/{id}
+  DELETE http://localhost:8080/users/6ab63bc44ac0c65ba810536c [204 No Content, 138B, 113ms]
+  √  204 No Content
+
+└ 22 GET deleted user -> 404
+  GET http://localhost:8080/users/6ab63bc44ac0c65ba810536c [404 Not Found, 371B, 111ms]
+  √  404 Not Found
+
+└ 23 POST /products (temporary)
+  POST http://localhost:8080/products [201 Created, 406B, 42ms]
+  √  201 Created
+
+└ 24 DELETE /products/{id}
+  DELETE http://localhost:8080/products/6ab63bc41b667783479b2351 [204 No Content, 138B, 45ms]
+  √  204 No Content
+
+□ 6. Unreachable service (manual)
+└ 6a GET /users with user-service stopped -> 503 from gateway
+  GET http://localhost:8080/users [200 OK, 710B, 95ms]
+  -  [skipped] Skipped: user-service is still up. Stop it, then send this request again.
+
+└ 6b POST /orders with user-service stopped -> 503 from order-service
+  POST http://localhost:8080/orders [201 Created, 672B, 382ms]
+  -  [skipped] Skipped: user-service is still up. Stop it, then send this request again.
+
+└ 6c GET /users after restart -> 200 (recovery)
+  GET http://localhost:8080/users [200 OK, 710B, 95ms]
+  √  200 OK
+
+┌─────────────────────────┬────────────────────┬───────────────────┐
+│                         │           executed │            failed │
+├─────────────────────────┼────────────────────┼───────────────────┤
+│              iterations │                  1 │                 0 │
+├─────────────────────────┼────────────────────┼───────────────────┤
+│                requests │                 27 │                 0 │
+├─────────────────────────┼────────────────────┼───────────────────┤
+│            test-scripts │                 27 │                 0 │
+├─────────────────────────┼────────────────────┼───────────────────┤
+│      prerequest-scripts │                 16 │                 0 │
+├─────────────────────────┼────────────────────┼───────────────────┤
+│              assertions │                 50 │                 0 │
+├─────────────────────────┴────────────────────┴───────────────────┤
+│ total run duration: 5.7s                                         │
+├──────────────────────────────────────────────────────────────────┤
+│ total data received: 7.89kB (approx)                             │
+├──────────────────────────────────────────────────────────────────┤
+│ average response time: 126ms [min: 6ms, max: 458ms, s.d.: 108ms] │
+└──────────────────────────────────────────────────────────────────┘

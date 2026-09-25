@@ -1,0 +1,64 @@
+# Render Blueprint: deploys the gateway and the three services as Docker web services.
+# Values marked `sync: false` are asked for in the Render dashboard on first deploy,
+# so no URL or password is stored in this file (same config-driven approach as .env).
+
+services:
+  - type: web
+    name: lab7-api-gateway
+    runtime: docker
+    plan: free
+    dockerContext: ./api-gateway
+    dockerfilePath: ./api-gateway/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # Public https URLs of the three services below, e.g. https://lab7-user-service.onrender.com
+      - key: USER_SERVICE_URL
+        sync: false
+      - key: PRODUCT_SERVICE_URL
+        sync: false
+      - key: ORDER_SERVICE_URL
+        sync: false
+      # Free services sleep when idle and take up to ~60s to wake up.
+      - key: PROXY_TIMEOUT_MS
+        value: "120000"
+
+  - type: web
+    name: lab7-user-service
+    runtime: docker
+    plan: free
+    dockerContext: ./user-service
+    dockerfilePath: ./user-service/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: MONGO_URI
+        sync: false
+
+  - type: web
+    name: lab7-product-service
+    runtime: docker
+    plan: free
+    dockerContext: ./product-service
+    dockerfilePath: ./product-service/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: MONGO_URI
+        sync: false
+
+  - type: web
+    name: lab7-order-service
+    runtime: docker
+    plan: free
+    dockerContext: ./order-service
+    dockerfilePath: ./order-service/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: USER_SERVICE_URL
+        sync: false
+      - key: PRODUCT_SERVICE_URL
+        sync: false
+      - key: DEPENDENCY_TIMEOUT_MS
+        value: "45000"
+      - key: DEPENDENCY_RETRIES
+        value: "1"

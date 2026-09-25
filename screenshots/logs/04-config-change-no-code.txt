@@ -1,0 +1,50 @@
+# Before: default registry from .env
+$ docker compose config | grep USER_SERVICE
+      USER_SERVICE_URL: http://user-service:3001
+      USER_SERVICE_URL: http://user-service:3001
+      PORT: "3001"
+
+# Change ONLY configuration (no code change): USER_SERVICE_PORT=4001, USER_SERVICE_URL=http://user-service:4001
+$ USER_SERVICE_PORT=4001 USER_SERVICE_URL=http://user-service:4001 docker compose up -d
+ Container campusconnect-lab7-product-service-1 Running 
+ Container campusconnect-lab7-user-service-1 Recreated 
+ Container campusconnect-lab7-order-service-1 Recreated 
+ Container campusconnect-lab7-api-gateway-1 Recreated 
+ Container campusconnect-lab7-user-service-1 Started 
+ Container campusconnect-lab7-order-service-1 Started 
+ Container campusconnect-lab7-api-gateway-1 Started 
+
+$ docker compose ps
+SERVICE           STATUS                    PORTS
+api-gateway       Up 16 seconds (healthy)   0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+order-service     Up 16 seconds (healthy)   3003/tcp
+product-service   Up 2 minutes (healthy)    3002/tcp
+user-service      Up 16 seconds (healthy)   3001/tcp, 4001/tcp
+
+$ docker compose logs api-gateway | grep -A3 listening
+api-gateway listening on port 8080
+  /users/* -> user-service at http://user-service:4001 (from USER_SERVICE_URL)
+  /products/* -> product-service at http://product-service:3002 (from PRODUCT_SERVICE_URL)
+  /orders/* -> order-service at http://order-service:3003 (from ORDER_SERVICE_URL)
+
+$ docker compose logs user-service | grep listening
+user-service listening on port 4001
+
+$ curl http://localhost:8080/health/services
+{"service":"api-gateway","services":[{"service":"user-service","reachable":true,"status":200,"health":{"status":"ok","service":"user-service","port":4001,"db":"connected"}},{"service":"product-service","reachable":true,"status":200,"health":{"status":"ok","service":"product-service","port":3002,"db":"connected"}},{"service":"order-service","reachable":true,"status":200,"health":{"status":"ok","service":"order-service","port":3003,"db":"connected","dependencies":{"userService":"http://user-service:4001","productService":"http://product-service:3002"}}}]}
+
+$ curl -i http://localhost:8080/users
+HTTP/1.1 200 OK
+
+$ docker compose logs api-gateway (tail)
+[api-gateway] GET /users -> user-service (http://user-service:4001) 200 121ms
+
+# Wrong registry entry (service on 4001, gateway told 3001) -> gateway cannot reach it
+$ USER_SERVICE_PORT=4001 USER_SERVICE_URL=http://user-service:3001 docker compose up -d api-gateway
+$ curl http://localhost:8080/users
+{"status":503,"service":"api-gateway","error":"Service Unavailable","message":"user-service is not reachable right now, please try again later","target":"user-service","reason":"ECONNREFUSED"}
+
+# Restore defaults
+$ docker compose up -d
+$ curl -i http://localhost:8080/users
+HTTP/1.1 200 OK
