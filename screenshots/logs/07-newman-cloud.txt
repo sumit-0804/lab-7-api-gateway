@@ -1,0 +1,160 @@
+newman
+
+API Gateway - Lab 7
+
+□ 1. Gateway
+└ 01 GET /health (gateway itself)
+  GET https://lab7-api-gateway.onrender.com/health [200 OK, 615B, 1467ms]
+  √  200 OK
+  √  answered by the gateway, not proxied
+  √  three routes registered
+
+└ 02 GET /health/services (registry check)
+  GET https://lab7-api-gateway.onrender.com/health/services [200 OK, 993B, 985ms]
+  √  200 OK - every registered service answered
+  √  checks all three services
+  √  each service has a connected database
+
+└ 03 GET /unknown -> 404 from gateway
+  GET https://lab7-api-gateway.onrender.com/unknown [404 Not Found, 504B, 412ms]
+  √  404 Not Found
+  √  answered by the gateway
+
+□ 2. Users via gateway
+└ 04 GET /users
+  GET https://lab7-api-gateway.onrender.com/users [200 OK, 931B, 717ms]
+  √  200 OK
+  √  body is an array
+
+└ 05 POST /users
+  POST https://lab7-api-gateway.onrender.com/users [201 Created, 654B, 926ms]
+  √  201 Created
+  √  Location header passed through the gateway
+
+└ 06 GET /users/{id}
+  GET https://lab7-api-gateway.onrender.com/users/6ab64494df6505f8ad34387b [200 OK, 606B, 1062ms]
+  √  200 OK
+  √  same record
+
+└ 07 PUT /users/{id}
+  PUT https://lab7-api-gateway.onrender.com/users/6ab64494df6505f8ad34387b [200 OK, 616B, 844ms]
+  √  200 OK
+  √  semester replaced
+
+└ 08 GET /users/999 (invalid id -> 404)
+  GET https://lab7-api-gateway.onrender.com/users/999 [404 Not Found, 570B, 485ms]
+  √  404 Not Found
+  √  answered by user-service through the gateway
+
+□ 3. Products via gateway
+└ 09 GET /products
+  GET https://lab7-api-gateway.onrender.com/products [200 OK, 859B, 1079ms]
+  √  200 OK
+  √  body is an array
+
+└ 10 POST /products
+  POST https://lab7-api-gateway.onrender.com/products [201 Created, 636B, 806ms]
+  √  201 Created
+
+└ 11 GET /products/{id}
+  GET https://lab7-api-gateway.onrender.com/products/6ab644982f2d862a4847280c [200 OK, 585B, 771ms]
+  √  200 OK
+  √  same record
+
+└ 12 PUT /products/{id}
+  PUT https://lab7-api-gateway.onrender.com/products/6ab644982f2d862a4847280c [200 OK, 592B, 918ms]
+  √  200 OK
+  √  price replaced
+
+└ 13 GET /products/999 (invalid id -> 404)
+  GET https://lab7-api-gateway.onrender.com/products/999 [404 Not Found, 576B, 509ms]
+  √  404 Not Found
+  √  answered by product-service through the gateway
+
+□ 4. Orders via gateway
+└ 14 POST /orders (gateway -> Order -> User + Product)
+  POST https://lab7-api-gateway.onrender.com/orders [201 Created, 894B, 2.7s]
+  √  201 Created
+  √  Order -> User call succeeded
+  √  Order -> Product call succeeded
+  √  price came from product-service
+
+└ 15 GET /orders
+  GET https://lab7-api-gateway.onrender.com/orders [200 OK, 3.15kB, 610ms]
+  √  200 OK
+  √  contains the new order
+
+└ 16 GET /orders/{id}
+  GET https://lab7-api-gateway.onrender.com/orders/6ab6449e54d0f002c80e70db [200 OK, 845B, 876ms]
+  √  200 OK
+  √  same order
+
+└ 17 GET /orders/{id}?expand=true
+  GET https://lab7-api-gateway.onrender.com/orders/6ab6449e54d0f002c80e70db?expand=true [200 OK, 1.15kB, 1313ms]
+  √  200 OK
+  √  user fetched live from user-service
+  √  product fetched live from product-service
+
+└ 18 GET /products/{id} (stock reduced by the order)
+  GET https://lab7-api-gateway.onrender.com/products/6ab644982f2d862a4847280c [200 OK, 592B, 737ms]
+  √  200 OK
+  √  stock reserved through the API (expected 28)
+
+└ 19 POST /orders with unknown userId -> 404
+  POST https://lab7-api-gateway.onrender.com/orders [404 Not Found, 686B, 802ms]
+  √  404 Not Found
+  √  answered by order-service through the gateway
+
+□ 5. Deletes via gateway
+└ 20 POST /users (temporary)
+  POST https://lab7-api-gateway.onrender.com/users [201 Created, 652B, 745ms]
+  √  201 Created
+
+└ 21 DELETE /users/{id}
+  DELETE https://lab7-api-gateway.onrender.com/users/6ab644a3df6505f8ad343883 [204 No Content, 314B, 752ms]
+  √  204 No Content
+
+└ 22 GET deleted user -> 404
+  GET https://lab7-api-gateway.onrender.com/users/6ab644a3df6505f8ad343883 [404 Not Found, 592B, 664ms]
+  √  404 Not Found
+
+└ 23 POST /products (temporary)
+  POST https://lab7-api-gateway.onrender.com/products [201 Created, 626B, 742ms]
+  √  201 Created
+
+└ 24 DELETE /products/{id}
+  DELETE https://lab7-api-gateway.onrender.com/products/6ab644a62f2d862a48472816 [204 No Content, 314B, 855ms]
+  √  204 No Content
+
+□ 6. Unreachable service (manual)
+└ 6a GET /users with user-service stopped -> 503 from gateway
+  GET https://lab7-api-gateway.onrender.com/users [200 OK, 1.09kB, 766ms]
+  -  [skipped] Skipped: user-service is still up. Stop it, then send this request again.
+
+└ 6b POST /orders with user-service stopped -> 503 from order-service
+  POST https://lab7-api-gateway.onrender.com/orders [201 Created, 893B, 1891ms]
+  -  [skipped] Skipped: user-service is still up. Stop it, then send this request again.
+
+└ 6c GET /users after restart -> 200 (recovery)
+  GET https://lab7-api-gateway.onrender.com/users [200 OK, 1.09kB, 931ms]
+  √  200 OK
+
+┌─────────────────────────┬────────────────────┬────────────────────┐
+│                         │           executed │             failed │
+├─────────────────────────┼────────────────────┼────────────────────┤
+│              iterations │                  1 │                  0 │
+├─────────────────────────┼────────────────────┼────────────────────┤
+│                requests │                 27 │                  0 │
+├─────────────────────────┼────────────────────┼────────────────────┤
+│            test-scripts │                 27 │                  0 │
+├─────────────────────────┼────────────────────┼────────────────────┤
+│      prerequest-scripts │                 16 │                  0 │
+├─────────────────────────┼────────────────────┼────────────────────┤
+│              assertions │                 50 │                  0 │
+├─────────────────────────┴────────────────────┴────────────────────┤
+│ total run duration: 27.6s                                         │
+├───────────────────────────────────────────────────────────────────┤
+│ total data received: 9.3kB (approx)                               │
+├───────────────────────────────────────────────────────────────────┤
+│ average response time: 940ms [min: 412ms, max: 2.7s, s.d.: 459ms] │
+└───────────────────────────────────────────────────────────────────┘

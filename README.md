@@ -13,7 +13,7 @@ things:
 
 | Part | What was added |
 | ---- | -------------- |
-| A. API Gateway | New `api-gateway` service (Express + `http-proxy-middleware`). It is the **only** entry point: it routes `/users`, `/products` and `/orders`, logs every request, and returns a clean `503`/`502` when a service is down. |
+| A. API Gateway | New `api-gateway` service (Express + `http-proxy-middleware`). It is the **only** entry point: it routes `/users`, `/products` and `/orders`, logs every request, answers CORS for browser clients, and returns a clean `503`/`502` when a service is down. |
 | B. Service discovery | The gateway reads service locations from environment variables (`USER_SERVICE_URL`, `PRODUCT_SERVICE_URL`, `ORDER_SERVICE_URL`). The route code contains no URLs. |
 | C. Cloud | A `render.yaml` Blueprint deploys all four containers to Render. The databases moved from local Mongo containers to **MongoDB Atlas** (one database per service). |
 
@@ -62,8 +62,22 @@ Source: [`docs/architecture.svg`](docs/architecture.svg)
 | ----- | -------------- | -------------- |
 | Client / Postman | Sends requests to one address | Internet |
 | API Gateway | Routes `/users`, `/products`, `/orders`; logging; error handling | Internet (public) |
-| User / Product / Order Service | Business logic and own data | Docker network only (see the cloud limitation in 8.4) |
+| User / Product / Order Service | Business logic and own data | Docker network only (see the cloud limitation in 8.5) |
 | MongoDB Atlas | Storage, one database per service | Services, through their connection string |
+
+### Local vs cloud architecture
+
+| Layer | Local (Docker Compose) | Cloud (Render) |
+| ----- | ---------------------- | -------------- |
+| Entry | Postman / React on the same machine | Any internet client |
+| Gateway | `api-gateway` container, `http://localhost:8080` | Public gateway, `https://lab7-api-gateway.onrender.com` |
+| Network | Docker network `campus-network` | Platform network (see the limitation in 8.5) |
+| Services | Reached by service name, `http://user-service:3001` | Reached by platform URL, `https://lab7-user-service.onrender.com` |
+| Database | MongoDB Atlas | MongoDB Atlas (same cluster) |
+
+**What stays the same:** application code, routes, API contract and the
+Docker images. **What changes:** where it runs, the values in the service
+registry, and the gateway becoming public.
 
 ### Folder layout
 
@@ -184,6 +198,22 @@ $ curl http://localhost:3001/health
 curl: failed to connect (exit 7) - port 3001 is not published
 ```
 
+### CORS
+
+A browser (React) client only ever talks to the gateway's origin, so CORS is
+answered at the gateway with `app.use(cors())`, the same `cors` package the
+services already use. Preflight `OPTIONS` requests are answered by the gateway
+and never proxied:
+
+```
+$ curl -i -X OPTIONS http://localhost:8080/users -H "Origin: http://localhost:5173" -H "Access-Control-Request-Method: POST"
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET,HEAD,PUT,PATCH,POST,DELETE
+```
+
+Postman and `curl` do not need CORS. It only matters for browser clients.
+
 ### Discussion: why an API Gateway instead of calling each service directly?
 
 - **One entry point.** Clients know one address (`https://…/`) instead of one
@@ -276,6 +306,21 @@ service on 4001 but the registry still saying 3001, the gateway cannot reach it:
 To do the same by editing `.env`, set `USER_SERVICE_PORT=4001` and
 `USER_SERVICE_URL=http://user-service:4001`, then run `docker compose up -d`.
 
+### Local vs cloud service URLs
+
+In Lab 6, containers reached each other by Docker service name. In the cloud
+the addressing is different, but only the registry **values** change:
+
+| Environment | `USER_SERVICE_URL` example |
+| ----------- | -------------------------- |
+| Local Docker Compose | `http://user-service:3001` |
+| Cloud internal service | Platform-provided internal hostname, e.g. `http://lab7-user-service:10000` (Render private service, paid) |
+| Cloud public service (used here, see 8.5) | `https://lab7-user-service.onrender.com` |
+| Public API (what clients use) | `https://lab7-api-gateway.onrender.com` |
+
+The same image runs locally and in the cloud. Only the environment variables
+differ.
+
 ### Discussion: static config vs dynamic service discovery
 
 With this static approach, the list of locations is written down before
@@ -337,7 +382,7 @@ locally and in the cloud. Only the selected environment changes.
 | 3. Products via gateway | GET list, POST, GET by id, PUT, invalid id → `404` from product-service |
 | 4. Orders via gateway | POST order (gateway → Order → User + Product), GET list, GET by id, `?expand=true`, stock reduced, unknown user → `404` |
 | 5. Deletes via gateway | DELETE user → `204` → GET → `404`; DELETE product → `204` |
-| 6. Unreachable service (manual) | 6a `GET /users` with user-service stopped → gateway `503`; 6b `POST /orders` → order-service `503`; 6c recovery → `200` |
+| 6. Gateway failure test (manual) | 6.0 `GET /users/{id}` → `200`; 6a same request with user-service stopped → gateway `503`; 6b `POST /orders` → order-service `503`; 6c after restart → `200` |
 
 The same run from the command line, which was used to produce the evidence logs:
 
@@ -346,20 +391,33 @@ npx newman run postman/API-Gateway-Lab7.postman_collection.json -e postman/Lab7-
 ```
 
 Local result ([`logs/05-newman-local.txt`](screenshots/logs/05-newman-local.txt)):
-**27 requests, 50 assertions, 0 failed.**
+**27 requests, 50 assertions, 0 failed.** (Recorded before request 6.0 was
+added to folder 6. A run now shows 28 requests.)
 
-### Unreachable-service test (local)
+### Gateway failure test (local)
+
+Each step is a request in Postman folder 6:
+
+| Step | Action | Expected |
+| ---- | ------ | -------- |
+| 1 | `docker compose up -d` (gateway, User, Product, Order) | all four healthy |
+| 2 | 6.0 `GET /users/{id}` through the gateway | `200` |
+| 3 | `docker compose stop user-service` | — |
+| 4 | 6a same request again (and 6b `POST /orders`) | — |
+| 5 | Check the response | `503` from `api-gateway` right away, `reason: EAI_AGAIN`. No hang, no crash. `/health` still `200`. |
+| 6 | `docker compose start user-service`, then 6c | `200` again (recovery) |
 
 ```bash
 docker compose stop user-service
-# Postman 6a / 6b, or:
-curl -i http://localhost:8080/users           # 503 from api-gateway, reason EAI_AGAIN
+curl -i http://localhost:8080/users/<id>      # 503 from api-gateway, reason EAI_AGAIN
 docker compose start user-service
-curl -i http://localhost:8080/users           # 200 again
+curl -i http://localhost:8080/users/<id>      # 200 again
 ```
 
 Output: [`logs/06-unreachable-503.txt`](screenshots/logs/06-unreachable-503.txt).
-The gateway itself kept answering `/health` with `200` the whole time.
+The gateway itself kept answering `/health` with `200` the whole time. This is
+the point of centralized error handling: one place turns "service is gone"
+into a clear, fast `503` for every client.
 
 ---
 
@@ -372,6 +430,7 @@ The gateway itself kept answering `/health` with `200` the whole time.
 | Startup: services connect to Atlas, gateway prints its routing table | [`logs/03-compose-up-and-routing-table.txt`](screenshots/logs/03-compose-up-and-routing-table.txt) |
 | Config-only change moves the route | [`logs/04-config-change-no-code.txt`](screenshots/logs/04-config-change-no-code.txt) |
 | Full collection through the gateway, local | [`logs/05-newman-local.txt`](screenshots/logs/05-newman-local.txt) |
+| Full collection against the public cloud URL | [`logs/07-newman-cloud.txt`](screenshots/logs/07-newman-cloud.txt) |
 | 503 on stopped service + recovery | [`logs/06-unreachable-503.txt`](screenshots/logs/06-unreachable-503.txt) |
 | Architecture diagram | [`02-architecture-diagram.png`](screenshots/02-architecture-diagram.png) |
 
@@ -381,11 +440,11 @@ Screenshots to add (Postman / Render dashboard):
 | ---- | ----- |
 | `screenshots/05-postman-local-run.png` | Collection Runner, "Lab7 - Local", all passing |
 | `screenshots/06-postman-health.png` | `GET /health` response |
-| `screenshots/07-postman-503.png` | 6a response with user-service stopped |
+| `screenshots/07-postman-failure-test.png` | Folder 6: 6.0 `200`, 6a `503` with user-service stopped, 6c `200` after restart |
 | `screenshots/08-render-dashboard.png` | Render dashboard with the four services "Live" |
 | `screenshots/09-render-env-vars.png` | Gateway's Environment tab (registry values) |
 | `screenshots/10-postman-cloud-run.png` | Collection Runner, "Lab7 - Cloud", all passing |
-| `screenshots/11-postman-cloud-503.png` | Cloud 503 test (section 8.3) |
+| `screenshots/11-postman-cloud-503.png` | Cloud failure test (section 8.4) |
 
 ---
 
@@ -401,6 +460,22 @@ Screenshots to add (Postman / Render dashboard):
 - takes configuration as environment variables in the dashboard, the same config-driven approach as Part B.
 
 ### 8.2 Deployment steps
+
+The cloud deployment is the working local system moved to Render, not a new
+application. How the lab's deployment sequence maps to the steps below:
+
+| Sequence step | Done in |
+| ------------- | ------- |
+| 1. Verify the local system works | Section 6 (newman: 0 failed) |
+| 2. Build the service images | `docker compose build` locally; Render rebuilds from the same Dockerfiles |
+| 3. Select a cloud platform | 8.1 (Render) |
+| 4. Push / build the images on the platform | Steps 2–3 below (push repo, Blueprint) |
+| 5. Deploy the services | Step 3 below |
+| 6. Configure environment variables | Step 4 below |
+| 7. Configure MongoDB Atlas | Step 1 below + `MONGO_URI` in step 4 |
+| 8. Deploy the API Gateway | Steps 3–5 below (`lab7-api-gateway`) |
+| 9. Obtain the public gateway URL | Step 6 below |
+| 10. Test through the public URL | Step 7 below |
 
 1. **Atlas network access.** Atlas → Network Access → Add IP Address →
    `0.0.0.0/0`. Render's free tier has no fixed outbound IP. The database user
@@ -462,23 +537,45 @@ Screenshots to add (Postman / Render dashboard):
    ```bash
    npx newman run postman/API-Gateway-Lab7.postman_collection.json -e postman/Lab7-Cloud.postman_environment.json
    ```
-   Send `GET /health/services` once first, so every service is awake (see 8.4).
+   Send `GET /health/services` once first, so every service is awake (see 8.5).
 
-**Public gateway URL:** `https://lab7-api-gateway.onrender.com` ← replace with the real URL after deploying.
+**Public gateway URL:** **https://lab7-api-gateway.onrender.com**
 
-### 8.3 Unreachable-service test in the cloud
+Cloud result ([`logs/07-newman-cloud.txt`](screenshots/logs/07-newman-cloud.txt)): the same collection against the public URL gave **27 requests, 50 assertions, 0 failed**. `/health/services` showed all three services reachable, with `db: connected` to Atlas (Render runs each on its own `PORT=10000`).
+
+### 8.3 MongoDB Atlas and secrets
+
+The lab sheet's variables map to these names (the services keep their Lab 6
+name `MONGO_URI`, so no code changed):
+
+| Lab sheet | Here | Set in |
+| --------- | ---- | ------ |
+| `MONGODB_URI` | `MONGO_URI` per service (`USER_/PRODUCT_/ORDER_MONGO_URI` in local `.env`) | Render Environment (`sync: false`), local `.env` |
+| `USER_SERVICE_URL`, `PRODUCT_SERVICE_URL`, `ORDER_SERVICE_URL` | same | Render Environment (`sync: false`), local `.env` |
+
+- **No password or connection string is committed.** `.env` is in
+  `.gitignore`. `render.yaml` and `.env.example` only contain placeholders or
+  `sync: false`. Check with `git ls-files | grep env`: only the `.env.example`
+  files and the two Postman environments (which hold just `baseUrl`).
+- In the cloud, the values live only in Render's Environment settings.
+- Atlas connectivity was verified from the deployed services:
+  `/health/services` shows `"db":"connected"` for all three.
+
+### 8.4 Gateway failure test in the cloud
 
 This also uses only configuration. On `lab7-api-gateway` → Environment, set
 `USER_SERVICE_URL=http://localhost:3999` (nothing listens there) and save. After
 the redeploy, `GET /users` on the public URL returns the gateway's
 `503 … "reason":"ECONNREFUSED"`, while `/products` and `/orders` still work.
-Set the real URL back and `/users` recovers.
+Set the real URL back and `/users` recovers. Postman folder 6 (6.0 → 6a → 6c)
+can be re-run against the Cloud environment to record the same 200 → 503 → 200
+sequence.
 
 (Suspending `lab7-user-service` in the dashboard also works. In that case the
 response comes from Render's edge in front of the suspended service, not from
 the gateway's error handler.)
 
-### 8.4 What was deployed and limitations
+### 8.5 What was deployed and limitations
 
 All four containers are deployed: the gateway plus User, Product and Order
 Service, with MongoDB Atlas. Free-tier limits met (per Render's documentation
@@ -517,6 +614,7 @@ at the time of writing):
 | Port 8080 already in use | Set `GATEWAY_PORT=8081` in `.env`. |
 | Render build fails with "Dockerfile not found" | `render.yaml` must be at the repo root, next to the four service folders. |
 | Cloud `/health/services` shows a service unreachable | Its URL in the gateway's Environment tab does not match the service's real `onrender.com` URL (check for a suffix). |
+| Browser (React) shows a CORS error | The browser must call the gateway URL, not a service URL. The gateway answers CORS (`app.use(cors())`). |
 | `DeprecationWarning: util._extend` when running the gateway with Node 22 on the host | Comes from `http-proxy` inside `http-proxy-middleware`. Harmless. The Docker image uses Node 20. |
 
 ---
@@ -544,9 +642,10 @@ network access, and free-tier limits on private networking.
 | API Gateway | Service discovery | Cloud deployment | Evidence |
 | ----------- | ----------------- | ---------------- | -------- |
 | ✅ `api-gateway` service created | ✅ Service URLs in env vars (`.env`, Render env) | ✅ Render chosen (8.1) | ✅ Gateway routes: `logs/05` · ⬜ Postman screenshot |
-| ✅ Routes to User / Product / Order | ✅ No URLs in route code (`config.js`) | ⬜ Gateway + services deployed | ✅ `/health`: `logs/02` · ⬜ Postman screenshot |
-| ✅ `GET /health` | ✅ Config change proven: `logs/04` | ⬜ Env vars set for cloud | ✅ 503 test: `logs/06` · ⬜ Postman screenshot |
-| ✅ Request logging | ✅ Static vs dynamic discussed (4) | ⬜ Public gateway URL reachable | ⬜ Render dashboard screenshots |
-| ✅ 502/503 on unreachable service | — | ⬜ Postman re-run on public URL | ✅ README updated |
+| ✅ Routes to User / Product / Order | ✅ No URLs in route code (`config.js`) | ✅ Gateway + services deployed | ✅ `/health`: `logs/02` · ⬜ Postman screenshot |
+| ✅ `GET /health` | ✅ Config change proven: `logs/04` | ✅ Env vars set; Atlas connected; no secrets committed (8.3) | ✅ Failure test 503 + recovery: `logs/06` · ⬜ Postman screenshot |
+| ✅ Request logging | ✅ Static vs dynamic discussed (4) | ✅ Public gateway URL reachable | ⬜ Render dashboard screenshots |
+| ✅ 502/503 on unreachable service | ✅ Local vs cloud URLs (4) | ✅ Postman re-run on public URL: `logs/07` | ✅ README updated |
+| ✅ CORS at the gateway | — | — | — |
 
-⬜ = to be done after deploying to Render (section 8.2).
+⬜ = screenshots still to be added (section 7).

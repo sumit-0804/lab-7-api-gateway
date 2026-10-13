@@ -971,21 +971,54 @@
       ]
     },
     {
-      "name": "6. Unreachable service (manual)",
-      "description": "Stop user-service first (local: `docker compose stop user-service`). Send 6a and 6b. Then start it again (`docker compose start user-service`) and send 6c.",
+      "name": "6. Gateway failure test (manual)",
+      "description": "1. Start all services. 2. Send 6.0 (200). 3. Stop user-service (local: `docker compose stop user-service`). 4-5. Send 6a and 6b (503, no hang or crash). 6. Start it again (`docker compose start user-service`) and send 6c (200, recovery).",
       "item": [
         {
-          "name": "6a GET /users with user-service stopped -> 503 from gateway",
+          "name": "6.0 GET /users/{id} with all services up -> 200",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/users",
+              "raw": "{{baseUrl}}/users/{{userId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "users"
+                "users",
+                "{{userId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 503) {",
+                  "    pm.test.skip('Skipped: user-service is already stopped. Start it and send this first.');",
+                  "} else {",
+                  "    pm.test('200 OK through the gateway', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6a GET /users/{id} with user-service stopped -> 503 from gateway",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
               ]
             }
           },
@@ -1062,17 +1095,18 @@
           ]
         },
         {
-          "name": "6c GET /users after restart -> 200 (recovery)",
+          "name": "6c GET /users/{id} after restart -> 200 (recovery)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/users",
+              "raw": "{{baseUrl}}/users/{{userId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "users"
+                "users",
+                "{{userId}}"
               ]
             }
           },

@@ -4,6 +4,7 @@
 require('dotenv').config();
 
 const express = require('express');
+const cors = require('cors');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const { loadConfig } = require('./config');
 
@@ -19,6 +20,8 @@ try {
 
 const app = express();
 app.disable('x-powered-by');
+// Browser (React) clients call the gateway's origin, so CORS is answered here, including preflight OPTIONS.
+app.use(cors());
 
 // One line per request: method, path, target service, status, time taken.
 app.use((req, res, next) => {
