@@ -1,0 +1,113 @@
+### Setup: user 6acdb54919ef4a1964465357 and product 6acdb54bafd8dcaba2672901 created through the gateway (Postman folders 2 and 3)
+
+### Steps 1-2: all services running -> GET /users/{id} through the gateway
+newman
+
+API Gateway - Lab 7
+
+Folder 6. Gateway failure test (manual)
+Sub-folder 6.0 GET /users/{id} with all services up -> 200
+  GET http://localhost:8080/users/6acdb54919ef4a1964465357 [200 OK, 395B, 136ms]
+  Pass  200 OK through the gateway
+
+--------------------------------------------------------------------
+|                         |           executed |            failed |
+--------------------------+--------------------+--------------------
+|              iterations |                  1 |                 0 |
+--------------------------+--------------------+--------------------
+|                requests |                  1 |                 0 |
+--------------------------+--------------------+--------------------
+|            test-scripts |                  1 |                 0 |
+--------------------------+--------------------+--------------------
+|      prerequest-scripts |                  0 |                 0 |
+--------------------------+--------------------+--------------------
+|              assertions |                  1 |                 0 |
+--------------------------------------------------------------------
+| total run duration: 382ms                                        |
+--------------------------------------------------------------------
+| total data received: 155B (approx)                               |
+--------------------------------------------------------------------
+| average response time: 136ms [min: 136ms, max: 136ms, s.d.: 0µs] |
+--------------------------------------------------------------------
+
+### Step 3: $ docker compose stop user-service
+ Container campusconnect-lab7-user-service-1 Stopping 
+ Container campusconnect-lab7-user-service-1 Stopped 
+
+### Steps 4-5: same request again (and POST /orders) with user-service stopped
+newman
+
+API Gateway - Lab 7
+
+Folder 6. Gateway failure test (manual)
+Sub-folder 6a GET /users/{id} with user-service stopped -> 503 from gateway
+  GET http://localhost:8080/users/6acdb54919ef4a1964465357 [503 Service Unavailable, 451B, 5s]
+  Pass  503 Service Unavailable
+  Pass  answered by the gateway, not a hang or crash
+  Pass  names the unreachable service
+
+Sub-folder 6b POST /orders with user-service stopped -> 503 from order-service
+  POST http://localhost:8080/orders [503 Service Unavailable, 563B, 6.3s]
+  Pass  503 Service Unavailable
+  Pass  order-service (behind the gateway) names the failing dependency
+
+-----------------------------------------------------------------
+|                         |         executed |           failed |
+--------------------------+------------------+-------------------
+|              iterations |                1 |                0 |
+--------------------------+------------------+-------------------
+|                requests |                2 |                0 |
+--------------------------+------------------+-------------------
+|            test-scripts |                2 |                0 |
+--------------------------+------------------+-------------------
+|      prerequest-scripts |                1 |                0 |
+--------------------------+------------------+-------------------
+|              assertions |                5 |                0 |
+-----------------------------------------------------------------
+| total run duration: 11.7s                                     |
+-----------------------------------------------------------------
+| total data received: 494B (approx)                            |
+-----------------------------------------------------------------
+| average response time: 5.7s [min: 5s, max: 6.3s, s.d.: 619ms] |
+-----------------------------------------------------------------
+
+### Step 6: $ docker compose start user-service   (waited until healthy), then the same request
+ Container campusconnect-lab7-user-service-1 Starting 
+ Container campusconnect-lab7-user-service-1 Started 
+ Container campusconnect-lab7-user-service-1 Waiting 
+ Container campusconnect-lab7-user-service-1 Healthy 
+newman
+
+API Gateway - Lab 7
+
+Folder 6. Gateway failure test (manual)
+Sub-folder 6c GET /users/{id} after restart -> 200 (recovery)
+  GET http://localhost:8080/users/6acdb54919ef4a1964465357 [200 OK, 395B, 193ms]
+  Pass  200 OK
+
+--------------------------------------------------------------------
+|                         |           executed |            failed |
+--------------------------+--------------------+--------------------
+|              iterations |                  1 |                 0 |
+--------------------------+--------------------+--------------------
+|                requests |                  1 |                 0 |
+--------------------------+--------------------+--------------------
+|            test-scripts |                  1 |                 0 |
+--------------------------+--------------------+--------------------
+|      prerequest-scripts |                  0 |                 0 |
+--------------------------+--------------------+--------------------
+|              assertions |                  1 |                 0 |
+--------------------------------------------------------------------
+| total run duration: 320ms                                        |
+--------------------------------------------------------------------
+| total data received: 155B (approx)                               |
+--------------------------------------------------------------------
+| average response time: 193ms [min: 193ms, max: 193ms, s.d.: 0µs] |
+--------------------------------------------------------------------
+
+### api-gateway log for these requests
+[api-gateway] GET /users/6acdb54919ef4a1964465357 -> user-service (http://user-service:3001) 200 25ms
+[api-gateway] GET /users/6acdb54919ef4a1964465357 -> user-service failed: EAI_AGAIN
+[api-gateway] GET /users/6acdb54919ef4a1964465357 -> user-service (http://user-service:3001) 503 5007ms
+[api-gateway] POST /orders -> order-service (http://order-service:3003) 503 6317ms
+[api-gateway] GET /users/6acdb54919ef4a1964465357 -> user-service (http://user-service:3001) 200 77ms

@@ -414,7 +414,15 @@ docker compose start user-service
 curl -i http://localhost:8080/users/<id>      # 200 again
 ```
 
-Output: [`logs/06-unreachable-503.txt`](screenshots/logs/06-unreachable-503.txt).
+Output: [`logs/06-unreachable-503.txt`](screenshots/logs/06-unreachable-503.txt) (curl).
+The full 6-step run with Postman folder 6 (via newman) is in
+[`logs/08-failure-test.txt`](screenshots/logs/08-failure-test.txt) and
+[`07-postman-failure-test.png`](screenshots/07-postman-failure-test.png):
+6.0 `200` → user-service stopped → 6a `503` from the gateway after 5 s (no
+hang), 6b `503` from order-service → restarted → 6c `200`. 8 assertions, 0 failed.
+
+![Gateway failure test](screenshots/07-postman-failure-test.png)
+
 The gateway itself kept answering `/health` with `200` the whole time. This is
 the point of centralized error handling: one place turns "service is gone"
 into a clear, fast `503` for every client.
@@ -432,6 +440,7 @@ into a clear, fast `503` for every client.
 | Full collection through the gateway, local | [`logs/05-newman-local.txt`](screenshots/logs/05-newman-local.txt) |
 | Full collection against the public cloud URL | [`logs/07-newman-cloud.txt`](screenshots/logs/07-newman-cloud.txt) |
 | 503 on stopped service + recovery | [`logs/06-unreachable-503.txt`](screenshots/logs/06-unreachable-503.txt) |
+| Gateway failure test, Postman folder 6 (200 → 503 → 200) | [`logs/08-failure-test.txt`](screenshots/logs/08-failure-test.txt) · [`07-postman-failure-test.png`](screenshots/07-postman-failure-test.png) |
 | Architecture diagram | [`02-architecture-diagram.png`](screenshots/02-architecture-diagram.png) |
 
 Screenshots to add (Postman / Render dashboard):
@@ -440,7 +449,6 @@ Screenshots to add (Postman / Render dashboard):
 | ---- | ----- |
 | `screenshots/05-postman-local-run.png` | Collection Runner, "Lab7 - Local", all passing |
 | `screenshots/06-postman-health.png` | `GET /health` response |
-| `screenshots/07-postman-failure-test.png` | Folder 6: 6.0 `200`, 6a `503` with user-service stopped, 6c `200` after restart |
 | `screenshots/08-render-dashboard.png` | Render dashboard with the four services "Live" |
 | `screenshots/09-render-env-vars.png` | Gateway's Environment tab (registry values) |
 | `screenshots/10-postman-cloud-run.png` | Collection Runner, "Lab7 - Cloud", all passing |
@@ -643,7 +651,7 @@ network access, and free-tier limits on private networking.
 | ----------- | ----------------- | ---------------- | -------- |
 | ✅ `api-gateway` service created | ✅ Service URLs in env vars (`.env`, Render env) | ✅ Render chosen (8.1) | ✅ Gateway routes: `logs/05` · ⬜ Postman screenshot |
 | ✅ Routes to User / Product / Order | ✅ No URLs in route code (`config.js`) | ✅ Gateway + services deployed | ✅ `/health`: `logs/02` · ⬜ Postman screenshot |
-| ✅ `GET /health` | ✅ Config change proven: `logs/04` | ✅ Env vars set; Atlas connected; no secrets committed (8.3) | ✅ Failure test 503 + recovery: `logs/06` · ⬜ Postman screenshot |
+| ✅ `GET /health` | ✅ Config change proven: `logs/04` | ✅ Env vars set; Atlas connected; no secrets committed (8.3) | ✅ Failure test 503 + recovery: `logs/08` · `07-postman-failure-test.png` |
 | ✅ Request logging | ✅ Static vs dynamic discussed (4) | ✅ Public gateway URL reachable | ⬜ Render dashboard screenshots |
 | ✅ 502/503 on unreachable service | ✅ Local vs cloud URLs (4) | ✅ Postman re-run on public URL: `logs/07` | ✅ README updated |
 | ✅ CORS at the gateway | — | — | — |
